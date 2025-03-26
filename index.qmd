@@ -121,15 +121,19 @@ $$
 
 hvor 
 
+:::{.incremental}
+
 - $p$ er er `shape parameter` (også ofte skrevet som $k$), 
 
 - $\sigma$ er `scale parameter`, som skalerer tiden, og 
 
 - $t$ er tiden. 
 
-Model gør det muligt at beskrive forskellige typer risikoforløb ved at justere værdierne af $p$ og $\sigma$.
+Gør det muligt at beskrive forskellige typer risikoforløb ved at justere værdierne af $p$ og $\sigma$.
 
 *(Man finder skala- og shape-parametrene ved at fitte modellen til data ved hjælp af maksimum likelihood-estimering (MLE). Surv-funktionerne estimerer automatisk både skala-parameteren ($\sigma$) og shape-parameteren ($p$))*
+
+:::
 
 :::
 
@@ -192,6 +196,8 @@ p
 
 ::: {style="font-size: 75%;"}
 
+:::{.incremental}
+
 Skalaværdien ($\sigma$) er $1/\sigma = p$,  
 
 - Når $\sigma > 1$ falder hazardfunktionen med tiden.
@@ -201,6 +207,8 @@ Skalaværdien ($\sigma$) er $1/\sigma = p$,
 - Når $0 < \sigma < 0.5$ stiger hazardfunktionen med en accelererende hældning, dvs. risikoen stiger hurtigere med tiden.
 
 Denne parameterisering gør det muligt at beskrive forskellige risikoprofiler over tid ved at ændre værdien af $\sigma$.
+
+:::
 
 :::
 
@@ -272,12 +280,15 @@ $$
 h(t) = \frac{\frac{p}{\sigma} \left(\frac{t}{\sigma}\right)^{p-1}}{\left(1+\left(\frac{t}{\sigma}\right)^p\right)^2}
 $$
 
+:::{.incremental}
 
 - Når $\sigma < 1$: Hazardfunktionen starter ved $0$, stiger til et maksimum og falder derefter mod 0.
 - Når $\sigma > 1$: Hazardfunktionen starter ved et uendeligt stort niveau og falder herefter mod 0.
 - Når $\sigma = 1$: Hazardfunktionen har ved $t=0$ en værdi på $1$ og falder mod $0$, når $t$ går mod uendelig.
 
 *(Man finder skala- og shape-parametrene ved at fitte modellen til data ved hjælp af maksimum likelihood-estimering (MLE). Surv-funktionerne estimerer automatisk både skala-parameteren ($\sigma$) og shape-parameteren ($p$))*
+
+:::
 
 :::
 
@@ -357,6 +368,8 @@ $$
 
 hvor, 
 
+:::{.incremental}
+
 - $f(t)$ er fordelingsfunktionen (**pdf**), som angiver sandsynligheden for, at en hændelse sker præcis ved tid $t$. 
 
 - $F(t)$ er den kummulative fordelingsfunktion (**CDF**), som angiver sandsynligheden for, at hændelsen er indtruffet inden tid $t$.
@@ -366,6 +379,8 @@ hvor,
 - Hastigheden afhænger af skalaparameteren – jo større skalaparameter jo hurtigere stiger hazarden toppunktet.
 
 *(Man finder skala- og shape-parametrene ved at fitte modellen til data ved hjælp af maksimum likelihood-estimering (MLE). Surv-funktionerne estimerer automatisk både skala-parameteren ($\sigma$) og shape-parameteren ($p$))*
+
+:::
 
 :::
 
@@ -385,6 +400,8 @@ $$
 
 $\gamma$ er den faktor, der forkorter eller forlænger overlevelsestiden. 
 
+:::{.incremental}
+
 - Hvis $\gamma > 1$: forlænges overlevelsestiden (dvs. en længere ventetid til hændelsen).
 
 - Hvis $\gamma < 1$: forkortes overlevelsestiden (dvs. en kortere ventetid til hændelsen).
@@ -392,6 +409,8 @@ $\gamma$ er den faktor, der forkorter eller forlænger overlevelsestiden.
 - Hvis $\gamma = 1$: er der ingen forskel i overlevelsestid mellem grupperne.
 
 $\gamma$ estimeres i en regressions model: $\gamma = \exp({\beta})$, hvor $\beta$ er den estimerede koefficient. Derfor betyder $\exp({\beta})$ hvor meget overlevelsestiden i én gruppe skal multipliceres med for at matche overlevelsestiden i referencegruppen.
+
+:::
 
 :::
 
