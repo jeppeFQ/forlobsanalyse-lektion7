@@ -1,0 +1,258 @@
+
+```{r}
+library(survival)
+library(tidyverse)
+library(haven)
+library(Hmisc)
+library(lattice)
+library(ggplot2)
+library(ggfortify)
+library(eha)
+```
+
+```{r}
+load("/Volumes/Fileshares/mikrooekonometri-F25/Råfiler/Forlob_14032023.rda")
+```
+
+# 2. Gør Forlob-datasættet klar til analyse
+
+# 3. Sæt udgangspunktet for forløbet til at være året, hvor personerne er 18 år
+    3.1 Vær opmærksom på variabeltyperne (chr, num og factor) og hvordan I bruger dem i analysen 
+    3.2 ALDER er en chracter variable
+
+```{r}
+df1 <- Forlob_18032022 %>% 
+    mutate(age = as.numeric(ALDER)) %>%
+    filter(age >= 18) %>%                                               
+    mutate(person_start = case_when(lag(pnr) == pnr ~ 0, TRUE ~ 1)) %>% 
+    mutate(born = as.numeric(C_ANTBOERNF)) %>% 
+    mutate(kvinde = if_else(KOEN == 2, 1, 0)) %>%
+    select(- C_ANTBOERNF, - KOEN, -ALDER)  
+```
+
+> **Hvad gør vi her?**
+
+```{r}
+df2 <- 
+    df1 %>% 
+    mutate(event = if_else(lag(born) == 0 & born >= 1 
+                            & person_start == 0 | person_start == 1 & born >= 1, 1, 0)) %>%       
+    mutate(born_aar = if_else(event == 1, aar, 0)) 
+```
+
+> **Hvad gør vi her?**
+
+
+Vi arbejder stadig med single-episode
+
+*C_ANTBOERNF angiver antallet af børn i familien, hvorfor det er muligt at have værdien 0, selv om personen har et biologisk/adopteret barn/ har boet sammen med en partners biologiske/adopterede barn. Det skyldes, at personen kan fraflytte denne familie, hvorefter der i den nye bopælsfamilie for personen ikke figurerer et eller flere børn længere.*
+
+Derfor er det muligt at den samme person optræde flere gange
+
+*I df3 bliver dupletter identificeret og filteret fra.*
+
+Det sikrer samtidig, at born_aar er året for første gang personen oplever "første barn".
+
+```{r}
+df3 <- 
+    df2 %>%                                                        
+    filter(born_aar != 0) %>%                                           
+    select(pnr, born_aar) %>%                                           
+    mutate(dup = case_when(pnr == lag(pnr) ~ 1, TRUE ~ 0)) %>% 
+    filter(dup != 1 ) %>% 
+    select(-dup)
+```
+
+> **Hvad gør vi her?**
+
+# 4. Smid irrelevante observationsrække ud af datasættet 
+
+person-period data, problemstilling første barn
+
+df4 udvælgelse de observationsrækker, der er relevante for belysningen af problemstillingen
+    - one-to-many join, hvor born_aar i alle obsrækker for personen angiver året for første barn
+    - en populationsvariabel (population under risiko) konstrueres på baggrund af born_aar
+    - tidsvariablene start og slut (af tidsintervallet) konstrueres ud fra viden om, hvornår personen starter (age = 18)
+    - datasættet (df4) reduceres til observationer, hvor personen er under risiko
+    - person_slut dannes på det reducerede datasæt
+    - igud som factor-variabel konstrueres
+
+```{r}
+df4 <- 
+    df2 %>% 
+    select(-born_aar) %>% 
+    left_join(df3, by = "pnr") %>%                                              
+    mutate(pop_var = if_else(born_aar >= aar | is.na(born_aar), 1, 0)) %>%
+    mutate(start = age - 18) %>%                                                
+    mutate(slut = age - 17) %>%                                                 
+    filter(pop_var == 1) %>%                                                    
+    mutate(person_slut = case_when(lead(pnr) == pnr ~ 0, TRUE ~ 1)) %>%        
+    mutate(igud = as.factor(case_when(i_udd == 1 | i_udd == 2 |
+                                        i_udd == 3 | i_udd == 4 ~ "under_udd" ,
+                                        TRUE ~ "ikke_igang")))   
+```
+
+> **Hvad gør vi her?**
+
+```{r}
+df5 <- 
+    df4 %>% 
+    filter(person_start == 1) %>% 
+    mutate(region18 = as.factor(case_when(region == 1 ~ "Hovedstaden", 
+                                        region == 2 ~ "Sjælland",
+                                        region == 3 ~ "Syddanmark",
+                                        region == 4 ~ "Midtjylland",
+                                        region == 5 ~ "Nordjylland"))) %>% 
+    select(pnr, region18)
+
+df6 <- left_join(df4, df5, by = "pnr") 
+```
+
+> **Hvad gør vi her?**
+
+*lag_igud bliver konstrueret for at håndtere eventuelle kausalitetsproblemer med tidsvarierende variable.*
+
+```{r}
+df7 <- mutate(df6, lag_igud = case_when(person_start == 0 ~ lag(igud)), 
+                lag_labstatus = case_when(person_start == 0 ~ lag(labstatus)))
+
+Cox_lang <- select(df7, -born_aar, -pop_var)
+Cox_kort <- filter(Cox_lang, person_slut == 1)
+```
+
+# 5. Vælg minimum tre variable til analysen af problemstillingen (minimum 1 tidsvarierende)
+
+Analysen vil have opvækstmiljø og arbejdsmarkedsstatus som omdrejningspunkt (f_udd_mor15, region18 og labstatus(tidsvarierende))
+
+# 6. Lav indledende KM analyser for at undersøge forskelle mellem grupper 
+
+(kun for de ikke-tidsvarierende variable) – plot KM-analyserne (autoplot) 
+    – Husk at begrænse datasættet til den sidste observation!
+
+Bivariate analyser af moderens uddannelsesniveau (ved år 15) og region18.
+
+Bemærk, at der er missing oplysninger
+
+```{r}
+KM1 <- survfit(Surv(slut, event) ~ f_udd_mor15, type = "kaplan-meier", data = Cox_kort)
+survdiff(Surv(slut, event) ~ f_udd_mor15, data = Cox_kort)
+KM2 <- survfit(Surv(slut, event) ~ region18, type = "kaplan-meier", data = Cox_kort)
+survdiff(Surv(slut, event) ~ region18, data = Cox_kort)
+```
+
+```{r}
+autoplot(KM1, censor.colour = "black")
+```
+
+```{r}
+autoplot(KM2, censor.colour = "black")
+```
+
+# 7. Lav en cox-regression, hvor tidsvarierende variable (mindst en) indgår, og fortolk resultaterne
+
+Cox regression med counting process argument:
+
+```{r}
+cox_lang1 <- coxph(Surv(start, slut, event) ~ as.factor(f_udd_mor15) + region18 
+                    + fct_rev(igud), method = "efron", data = Cox_lang)
+summary(cox_lang1)
+```
+
+Overvej, hvad der skal ske med de oplysninger, hvor der ikke er en registret uddannelse for moderen (f_udd_mor15) - en mulighed er at føje missing til den laveste uddannelseskategori.
+
+# Cox PH parametrisering (parametrisk proportional hazards-model)
+
+```{r}
+ph1 <- phreg(Surv(slut, event) ~ kvinde, dist = "weibull", shape = 1, data = Cox_kort)
+summary(ph1)
+plot(ph1, fn = c("haz", "cum", "den", "sur")[4])
+```
+
+- Weibull med shape = 1 = eksponentiel
+
+> "Modellen estimerer, at kvinder har en 36.6% højere risiko for at opleve hændelsen (hazard ratio/Rel.Risk = 1.37, p < 0.001) sammenlignet med mænd, under antagelse af eksponentiel fordeling af hændelsestider."
+
+```{r}
+wei1 <- phreg(Surv(slut, event) ~ kvinde, dist = "weibull", data = Cox_kort)
+summary(wei1)
+plot(wei1, fn = c("haz", "cum", "den", "sur")[1])
+```
+
+- Fuldt fleksibel Weibull-fordeling, altså uden at shape er fastsat (modsat det forrige eksempel med shape = 1).
+- Det betyder, at modellen tillader en hazard-rate, der kan ændre sig over tid — fx stige eller falde — i stedet for at være konstant som i den eksponentielle model.
+- Vi plotter hazard-funktionen — altså hvordan risikoen for event udvikler sig over tid. Da det er en Weibull-model, vil kurven typisk vise om risikoen er stigende eller faldende over tid afhængigt af den estimerede formparameter.
+
+> "Kvinder har en 53% (1.527, p < 0.001) højere hazard-rate sammenlignet med mænd. Det vil sige, at de har større risiko for at opleve eventen tidligere, alt andet lige."
+
+**Sammen ligning med model ph1 (exponentiel parametrisring)**: 
+
+> når vi tillader hazard-raten at ændre sig over tid (Weibull), bliver forskellen mellem kønnene endnu større. Det tyder på, at antagelsen om konstant risiko (eksponentiel) undervurderer effekten af køn.
+
+eller: 
+
+> "Sammenligning af modeller viser, at kvinder har en signifikant højere risiko for at opleve eventen end mænd, og at effekten fremstår stærkere i den fleksible Weibull-model (HR = 1,53) end i den eksponentielle model med konstant hazard (HR = 1,37), hvilket indikerer, at antagelsen om konstant risiko kan undervurdere kønseffekten."
+
+- Giver os en indikation om, at vi nok bør kigge nærmere på ventetidsmodeller
+
+# Ventetidsmodeller 
+
+## Weibull
+
+```{r}
+aft2 <- survreg(Surv(slut, event) ~ kvinde, 
+                dist = "weibull", 
+                data = Cox_kort)
+summary(aft2)
+```
+
+```{r}
+(exp_coef2 <- exp(aft2$coefficients))
+```
+
+Dette giver dig den multiplikative effekt på median overlevelsestid, hvilket er den relevante fortolkning i AFT-modeller (Accelerated Failure Time).
+    - Eksponentieringen gør det muligt at sige noget intuitivt om "hvor meget længere/kortere" tid til event, givet en ændring i kovariat.
+    - Det fortæller, hvor meget hurtigere eller langsommere en event indtræffer for én enheds ændring i kovariatet.
+    - 0.83 -> kvinder har 17% kortere overlevelsestid end mænd, alt andet lige. Dvs. eventen fremskyndes. 
+
+> "Modellen viser, at kvinder i gennemsnit har en 16,4% kortere tid til hændelsen sammenlignet med mænd (tidsaccelerationsfaktor = 0.84, p < 0.001). Dette indikerer, at eventen (første barn) indtræffer hurtigere for kvinder end for mænd."
+
+- Interceptet på log-skala (exp⁡(2.8619)=17.50) svarer til median overlevelsestid (i ujusteret form) for referencekategorien (her: mænd). Den er ikke altid fortolkningsmæssigt central, men kan bruges til at beregne forventet tid til event. 
+
+## Lognormal
+
+```{r}
+aft3 <- survreg(Surv(slut, event) ~ kvinde, 
+                dist = "lognormal", 
+                data = Cox_kort)
+summary(aft3)
+```
+
+Når vi eksponentierer for at få tidsaccelerationsfaktoren: exp⁡(−0.2673)=0.766, betyder det at kvinder har en 23,4% kortere forventet tid til event sammenlignet med mænd.
+
+- Lognormal (positivt skæve overlevelsestider, ikke-monoton hazard)
+- Koefficienterne estimeres på log-tidsskala, så man tolker dem som ændringer i overlevelsestid (ikke hazard)
+
+> "Den lognormale AFT-model viser, at kvinder har signifikant kortere tid til hændelsen sammenlignet med mænd (tidsaccelerationsfaktor = 0,77, p < 0,001), hvilket svarer til en 23% hurtigere overgang til eventen."
+
+Sammenlignet med modeller med andre parametrisering (e.g., weibull) vil vi typisk finde samme tendens (kvinder har kortere tid til event), men størrelsen af tidsaccelerationsfaktoren kan variere afhængigt af antagelserne om fordelingens form.
+
+En sammenligning af modellerne kunne lyde: 
+
+> "Alle AFT-modeller — lognormal, loglogistisk og Weibull — peger entydigt på, at kvinder har en kortere tid til hændelsen sammenlignet med mænd. Den estimerede effekt varierer dog afhængigt af den valgte fordeling: fra 16% (Weibull) til 23% (lognormal) hurtigere overgang blandt kvinder." 
+
+
+Udvalg af model: 
+
+```{r}
+extractAIC(aft2)[2] 
+```
+
+```{r}
+extractAIC(aft3)[2] 
+```
+
+- Weibull har lavere AIC (32.659) end lognormal (32.864), og passer derfor data bedre.
+
+> "Baseret på Akaike’s Information Criterion (AIC) viser Weibull AFT-modellen det bedste model fit (AIC = 32.659), mens lognormal-modellen har et højere AIC mål (32.864). Vi vælger derfor Weibull modellen."
+
+- **I DAG SKAL I TESTE MERE EN TO MODELLER!**

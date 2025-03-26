@@ -1,0 +1,739 @@
+---
+title: "Event History Analysis V – Modelbygning og modelkontrol"
+encoding: "UTF-8"
+execute:
+  echo: false
+format:
+  revealjs:
+    slide-number: c
+    show-slide-number: print
+    embed-resources: true
+    self-contained-math: true
+    smaller: true
+    scrollable: true
+    theme: dark 
+    html-math-method:
+      method: mathjax
+      url: "https://cdnjs.cloudflare.com/ajax/libs/mathjax/2.7.9/latest.js?config=TeX-MML-AM_CHTML"
+    footer: "Jeppe F. Larsen | 27. marts 2025"
+---
+
+## Dagens program 
+
+- Hurtigt over ventetidsmodeller
+    - Eksponentiel
+    - Weibull
+    - Log-logistisk og log-normal
+- Fælles gennemgang af øvelse
+- Valg af model 
+- Test af proportionalitetsantagelse
+- Løsning af overskridelsen
+
+## Forventet udbytte 
+
+::: {.columns} 
+<!--  ------------------------------------------->
+::: {.column width="60%"}
+### *Viden*
+
+-   Modelbygning og test.
+
+
+### *Færdigheder*
+
+-   Test og sammenligning af modeller.
+
+
+:::
+
+::: {.column width="40%"}
+### *Kompetencer*
+
+-   Valg af regressionsmodel.
+-   Håndtering af brud på proportionalitetsantagelsen i cox.
+
+:::
+<!--  ------------------------------------------->
+:::
+
+# Parametriske modeller, et overblik. 
+
+## Weibull hazard – for forskellige skala-værdier
+
+::: {.columns} 
+<!--  ------------------------------------------->
+::: {.column width="50%"}
+
+```{r}
+library(ggplot2)
+
+# Weibull hazard function
+weibull_hazard <- function(t, shape, scale = 1) {
+  if (shape <= 0) {
+    stop("Shape parameter skal være positiv")
+  }
+  (shape / scale) * (t / scale)^(shape - 1)
+}
+
+# Tider (x)
+t <- seq(0.01, 5, by = 0.01)
+
+# Shape parametre (p)
+shapes <- c(0.5, 1, 1.5, 2, 2.5)
+
+# Tom df
+hazard_data <- data.frame()
+
+# Bestem HR for hver shape parameter i et loop og fyld i den tomme df 
+for (shape in shapes) {
+  hazard_data <- rbind(hazard_data, data.frame(
+    Time = t,
+    Hazard = weibull_hazard(t, shape),
+    Shape = as.factor(shape)
+  ))
+}
+
+# Plot
+p <- ggplot(hazard_data, aes(x = Time, y = Hazard, colour = Shape)) +
+  geom_line() +
+  scale_y_continuous(limits = c(0, 3)) +  #
+  scale_x_continuous(limits = c(0, 3)) +  #
+  ggtitle("Hazard Funktioner for the Weibull Fordelinger") +
+  xlab("Tid") +
+  ylab("Weibull Hazard h(t)") +
+  theme_minimal()
+
+p
+
+```
+
+:::
+
+::: {.column width="50%"}
+
+::: {style="font-size: 75%;"}
+
+Formlen for hazardfunktionen i en Weibull-model er:
+
+$$
+h(t) = \frac{p}{\sigma} \left(\frac{t}{\sigma}\right)^{p-1}
+$$
+
+hvor 
+
+- $p$ er er `shape parameter` (også ofte skrevet som $k$), 
+
+- $\sigma$ er `scale parameter`, som skalerer tiden, og 
+
+- $t$ er tiden. 
+
+Model gør det muligt at beskrive forskellige typer risikoforløb ved at justere værdierne af $p$ og $\sigma$.
+
+*(Man finder skala- og shape-parametrene ved at fitte modellen til data ved hjælp af maksimum likelihood-estimering (MLE). Surv-funktionerne estimerer automatisk både skala-parameteren ($\sigma$) og shape-parameteren ($p$))*
+
+:::
+
+:::
+<!--  ------------------------------------------->
+:::
+
+## Weibull hazard – for forskellige skala-værdier
+
+::: {.columns} 
+<!--  ------------------------------------------->
+::: {.column width="50%"}
+
+```{r}
+library(ggplot2)
+
+# Weibull hazard function
+weibull_hazard <- function(t, shape, scale = 1) {
+  if (shape <= 0) {
+    stop("Shape parameter skal være positiv")
+  }
+  (shape / scale) * (t / scale)^(shape - 1)
+}
+
+# Tider (x)
+t <- seq(0.01, 5, by = 0.01)
+
+# Shape parametre (p)
+shapes <- c(0.5, 1, 1.5, 2, 2.5)
+
+# Tom df
+hazard_data <- data.frame()
+
+# Bestem HR for hver shape parameter i et loop og fyld i den tomme df 
+for (shape in shapes) {
+  hazard_data <- rbind(hazard_data, data.frame(
+    Time = t,
+    Hazard = weibull_hazard(t, shape),
+    Shape = as.factor(shape)
+  ))
+}
+
+# Plot
+p <- ggplot(hazard_data, aes(x = Time, y = Hazard, colour = Shape)) +
+  geom_line() +
+  scale_y_continuous(limits = c(0, 3)) +  #
+  scale_x_continuous(limits = c(0, 3)) +  #
+  ggtitle("Hazard Funktioner for the Weibull Fordelinger") +
+  xlab("Tid") +
+  ylab("Weibull Hazard h(t)") +
+  theme_minimal()
+
+p
+
+```
+
+:::
+
+::: {.column width="50%"}
+
+::: {style="font-size: 75%;"}
+
+Skalaværdien ($\sigma$) er $1/\sigma = p$,  
+
+- Når $\sigma > 1$ falder hazardfunktionen med tiden.
+
+- Når $0.5 < \sigma < 1$ stiger hazardfunktionen med tiden, men stigningen aftager med tiden (dvs. stigningen er aftagende).
+
+- Når $0 < \sigma < 0.5$ stiger hazardfunktionen med en accelererende hældning, dvs. risikoen stiger hurtigere med tiden.
+
+Denne parameterisering gør det muligt at beskrive forskellige risikoprofiler over tid ved at ændre værdien af $\sigma$.
+
+:::
+
+:::
+<!--  ------------------------------------------->
+:::
+
+## Log-logistisk – for forskellige skala-værdier
+
+::: {.columns} 
+<!--  ------------------------------------------->
+::: {.column width="50%"}
+
+```{r}
+library(ggplot2)
+
+# Log-logistic hazard funktion
+log_logistic_hazard <- function(t, alpha, beta) {
+  (beta / alpha) * (t / alpha)^(beta - 1) / (1 + (t / alpha)^beta)^2
+}
+
+# Tid:
+t <- seq(0, 6, by = 0.01)
+
+# I denne kontekst omtales scale typisk som alpha og shape som beta (ved ikke hvorfor, men jeg holder mig til konventioner, hvis i skal Google/chatte jer frem til noget ligende på et senere tidspunkt).
+alpha_beta_pairs <- data.frame(Alpha = c(0.5, 1.0, 1.5), Beta = c(2, 1, 1/1.5))
+
+# Tom df
+hazard_data <- data.frame()
+
+# Udregn HR med tilsvarende beta og alpha i et loop
+for (i in 1:nrow(alpha_beta_pairs)) {
+  alpha <- alpha_beta_pairs$Alpha[i]
+  beta <- alpha_beta_pairs$Beta[i]
+  
+  hazard_data <- rbind(hazard_data, data.frame(
+    Time = t,
+    Hazard = log_logistic_hazard(t, alpha, beta),
+    Alpha = as.factor(alpha)
+  ))
+}
+
+# Plot
+p <- ggplot(hazard_data, aes(x = Time, y = Hazard, colour = Alpha)) +
+  geom_line() +
+  scale_y_continuous(limits = c(0, 1.5)) + 
+  scale_x_continuous(limits = c(0, 3)) + 
+  ggtitle("Typical Hazard Functions for the Log-Logistic Model") +
+  xlab("Time") +
+  ylab("Log-Logistic Hazard h(t)") +
+  theme_minimal() +
+  scale_colour_discrete(name = "Scale Parameter (σ)") +
+  theme(legend.position = "right")
+
+p
+
+```
+
+:::
+
+::: {.column width="50%"}
+
+::: {style="font-size: 75%;"}
+
+
+Hazardfunktionen for en log-logistisk fordeling er givet ved:
+
+$$
+h(t) = \frac{\frac{p}{\sigma} \left(\frac{t}{\sigma}\right)^{p-1}}{\left(1+\left(\frac{t}{\sigma}\right)^p\right)^2}
+$$
+
+
+- Når $\sigma < 1$: Hazardfunktionen starter ved $0$, stiger til et maksimum og falder derefter mod 0.
+- Når $\sigma > 1$: Hazardfunktionen starter ved et uendeligt stort niveau og falder herefter mod 0.
+- Når $\sigma = 1$: Hazardfunktionen har ved $t=0$ en værdi på $1$ og falder mod $0$, når $t$ går mod uendelig.
+
+*(Man finder skala- og shape-parametrene ved at fitte modellen til data ved hjælp af maksimum likelihood-estimering (MLE). Surv-funktionerne estimerer automatisk både skala-parameteren ($\sigma$) og shape-parameteren ($p$))*
+
+:::
+
+:::
+<!--  ------------------------------------------->
+:::
+
+
+## Log-normal – for forskellige skala-værdier
+
+::: {.columns} 
+<!--  ------------------------------------------->
+::: {.column width="50%"}
+
+```{r}
+library(ggplot2)
+
+# Log-normal hazard function
+log_normal_hazard <- function(t, mu, sigma) {
+  # The pdf of the log-normal distribution
+  pdf <- 1 / (t * sigma * sqrt(2 * pi)) * exp(- (log(t) - mu)^2 / (2 * sigma^2))
+  
+  # The CDF of the log-normal distribution
+  cdf <- pnorm(log(t), mean = mu, sd = sigma)
+  
+  # The hazard function
+  pdf / (1 - cdf)
+}
+
+# Generate a sequence of time values
+t <- seq(0.01, 6, by = 0.01)  # Start at 0.01 to avoid division by zero
+
+# Define sigma values
+sigmas <- c(0.5, 1, 1.5)
+
+# Initialize a data frame to store hazard rates
+hazard_data <- data.frame()
+
+# Compute hazard rates for each sigma
+for (sigma in sigmas) {
+  hazard_data <- rbind(hazard_data, data.frame(
+    Time = t,
+    Hazard = log_normal_hazard(t, mu = 0, sigma = sigma),
+    Sigma = as.factor(sigma)
+  ))
+}
+
+# Plotting with ggplot2
+p <- ggplot(hazard_data, aes(x = Time, y = Hazard, colour = Sigma)) +
+  geom_line() +
+  scale_y_continuous(limits = c(0, 2), breaks = seq(0, 2, by = 0.5)) + 
+  scale_x_continuous(limits = c(0, 6)) +
+  ggtitle("Hazard Functioner for Log-Normal Model") +
+  xlab("Time") +
+  ylab("Log-Normal Hazard h(t)") +
+  theme_minimal() +
+  scale_colour_discrete(name = "Scale Parameter (σ)") +
+  theme(legend.position = "right")
+
+print(p)
+
+
+```
+
+:::
+
+::: {.column width="50%"}
+
+::: {style="font-size: 75%;"}
+
+
+Hazard funktionen for en log-normal fordeling er givet som:
+
+$$
+h(t) = \frac{f(t)}{1-F(t)}
+$$
+
+hvor, 
+
+- $f(t)$ er fordelingsfunktionen (**pdf**), som angiver sandsynligheden for, at en hændelse sker præcis ved tid $t$. 
+
+- $F(t)$ er den kummulative fordelingsfunktion (**CDF**), som angiver sandsynligheden for, at hændelsen er indtruffet inden tid $t$.
+
+- Når $t=0$ er hazarden $0$; hazarden stiger hurtigt og falder derefter mod $0$ som tiden går mod uendeligt.
+
+- Hastigheden afhænger af skalaparameteren – jo større skalaparameter jo hurtigere stiger hazarden toppunktet.
+
+*(Man finder skala- og shape-parametrene ved at fitte modellen til data ved hjælp af maksimum likelihood-estimering (MLE). Surv-funktionerne estimerer automatisk både skala-parameteren ($\sigma$) og shape-parameteren ($p$))*
+
+:::
+
+:::
+<!--  ------------------------------------------->
+:::
+
+## Ventetidsmodeller (`ATF`)
+
+::: {style="font-size: 75%;"}
+
+Ventetidsmodeller (ATF) handler om at estimere den forventede (vente)tid, indtil en hændelse indtræffer. Ideen er, at overlevelseskurven for én gruppe kan opnås ved at skalere tiden i overlevelseskurven for en anden gruppe. Dette udtrykkes ved formlen:
+
+$$
+S_{1}(t) = S_{2}(\gamma t) \rightarrow S_{hund}(t) = S_{menneske}(7t)
+$$
+
+$\gamma$ er den faktor, der forkorter eller forlænger overlevelsestiden. 
+
+- Hvis $\gamma > 1$: forlænges overlevelsestiden (dvs. en længere ventetid til hændelsen).
+
+- Hvis $\gamma < 1$: forkortes overlevelsestiden (dvs. en kortere ventetid til hændelsen).
+
+- Hvis $\gamma = 1$: er der ingen forskel i overlevelsestid mellem grupperne.
+
+$\gamma$ estimeres i en regressions model: $\gamma = \exp({\beta})$, hvor $\beta$ er den estimerede koefficient. Derfor betyder $\exp({\beta})$ hvor meget overlevelsestiden i én gruppe skal multipliceres med for at matche overlevelsestiden i referencegruppen.
+
+:::
+
+## Ventetidsmodeller (`ATF`)
+
+$$
+\ln t_{j} = x_{j}\beta+z_{j}
+$$
+hvor, $z = \log(t)x$
+
+
+
+| Model/pdf     | Udfald | Parametre ($p$, $\sigma$) | Udvikling over tid |
+|---------------|:-------|:-----:|:------------------|
+| Eksponentiel  | PH/ATF |    1  |   Konstant. Antagelse om `PH`.  |
+| Weibull       | PH/ATF |   2   |  Monoton stigende, faldende, konstant. |
+| Log-logistisk | ATF    |     2 |   Ikke-monoton.    |
+| Log-normal    | ATF    |    2  |    Ikke-monoton.    |
+
+## Sammenligning med Cox-modellen
+
+| Modeltype	| Effektmål	| Fortolkning |
+|-----------|:----------|:------------|
+| Cox (semiparametrisk) |	Hazard Ratio (HR)	| Relativ risiko på et givet tidspunkt |
+| AFT (parametrisk)	| Tidsaccelerationsfaktor | Hvor meget hurtigere/langsommere eventen sker |
+
+# Gennemgang af øvelser
+
+# Modelbygning og -udvælgelse 
+
+## Modelbygning 
+
+::: {style="font-size: 75%;"}
+
+:::{.incremental}
+
+- I praksis er modelbygning en vekselvirkning mellem teori (forventninger) og statistiske tests. 
+
+- Teoretiske forventninger eller empiriske erfaringer om problemet danner udgangspunktet for modelarbejdet.
+
+  -  Valget af den passende hazardfunktion i parametriske modeller bør baseres på teoretiske antagelser og empiriske data. Forskellige fordelingstyper (fx Weibull, log-normal, log-logistisk) kan vælges afhængigt af, hvordan risikoen forventes at ændre sig over tid.
+  
+  -  Udvælgelsen af covariater i modellen skal også være forankret i teori og tidligere forskning. Det handler om at identificere de faktorer, som man forventer at påvirke overlevelsestiden, og teste deres betydning i modellen.
+
+- Modellen justeres og forbedres løbende gennem en proces, hvor man evaluerer modelens prædiktive evne, sammenligner modeller (fx ved hjælp af AIC) og tester antagelser. Dette iterative arbejde sikrer, at den endelige model både er teoretisk fornuftig og empirisk robust.
+
+- Det statistiske aspekt af modeludvælgelse er ikke endegyldigt. 
+
+:::
+
+:::
+
+## Er `Cox` eller `AFT` den bedste model at anvende? 
+
+::: {style="font-size: 75%;"}
+
+:::{.incremental}
+
+1. Teoretisk interesse:
+
+    - Hvis dit primære fokus er på hændelsen – altså risikoen for at hændelsen indtræffer på et givet tidspunkt – er Cox-regressionen ofte mest relevant.
+
+    - Hvis du derimod er mere interesseret i ventetiden (altså længden af overlevelsen), kan en ATF-model være mere passende.
+
+2. Central i valget af semiparametrisk over for parametriske modeller er viden om hazardfunktionen. 
+
+    - Parametriske modeller (ATF): Hvis du har en god idé om, hvilken form hazardfunktionen har (eller kan antage, at den tilnærmelsesvis er kendt), udnytter de parametriske modeller al information i data til at estimere $\beta$.
+
+    - Semi-parametrisk model (Cox): Hvis den underliggende hazardfunktion er ukendt eller svært at specificere, er Cox-regressionen det bedste valg, da den estimerer $\beta$ uden at skulle antage en bestemt form for $h(t)$. Det gør Cox-modellen mere robust i situationer med usikkerhed om hazardfunktionen.
+
+3. Altså, valget mellem Cox og ATF afhænger af, om din interesse er i hændelsen eller i ventetiden, samt hvor godt du kender formen på hazardfunktionen.
+
+:::
+
+:::
+
+## Kriterier for udvælgelse: AIC
+
+|            |  Loglogistisk       |       |        |  | Lognormal       |       |        |  |    Weibull    |       |        |  | Exponentiel        |       |       |
+|-------------------------|--------|-------|--------|-----------|--------|-------|--------|---------|--------|-------|--------|-------------|---------|-------|-------|
+|                         | coef   | s.e.  | z      | p         | coef   | s.e.  | z      | p       | coef   | s.e.  | z      | p           | coef    | s.e.  | z     | p     |
+| Kvinde                  | -0,225 | 0,014 | -16,45 | 0         | -0,267 | 0,017 | -17,74 | 0       | -0,179 | 0,013 | -14,28 | 0           | -0,3123 | 0,03  | -10,6 | 0     |
+| region18Midtjylland     | -0,049 | 0,02  | -2,53  | 0,011     | -0,03  | 0,022 | -1,6   | 0,11    | -0,051 | 0,018 | -2,82  | 0,005       | -0,078  | 0,043 | -1,84 | 0,066 |
+| region18Nordjylland     | -0,086 | 0,024 | -3,55  | 0         | -0,076 | 0,026 | -2,87  | 0,004   | -0,069 | 0,022 | -3,18  | 0,002       | -0,12   | 0,052 | -2,33 | 0,02  |
+| region18Sjælland        | -0,056 | 0,022 | -2,58  | 0,01      | -0,049 | 0,024 | -2,02  | 0,043   | -0,045 | 0,02  | -2,25  | 0,024       | -0,084  | 0,047 | -1,78 | 0,08  |
+| region18Syddanmark      | -0,071 | 0,02  | -3,58  | 0         | -0,058 | 0,022 | -2,7   | 0,007   | -0,069 | 0,018 | -3,83  | 0           | -0,113  | 0,043 | -2,65 | 0,008 |
+| Scale                   | 0,315  |       |        |           | 0,586  |       |        |         | 0,421  |       |        |             | 1       |       |       |       |
+| loglik(model)(a)        | -16247 |       |        |           | -16423 |       |        |         | -16317 |       |        |             | -18078  |       |       |       |
+| loglik(tom model)(b)    | -16390 |       |        |           | -16584 |       |        |         | -16429 |       |        |             | -18139  |       |       |       |
+| p-værdi for a=b         |        |       |        | 0         |        |       |        | 0       |        |       |        | 0           |         |       |       | 0     |
+| AIC (-2(log L)+2(c+p+1)) | 32507  |       |        |           | 32860  |       |        |         | 32648  |       |        |             | 36169   |
+
+
+## Kriterier for udvælgelse: AIC
+
+- Giver en af modellerne mest mening teoretisk og understøttes af AIC?
+
+```{r}
+#| echo: true
+#| eval: false
+
+extractAIC(model_exp)[2] 
+
+extractAIC(model_lognorm)[2]
+
+extractAIC(model_loglog)[2]
+
+extractAIC(model_weibull)[2]
+
+# eller:
+
+test <- anova(model_exp, model_lognorm, model_loglog, model_weibull)
+
+```
+
+
+## Undersøgelse af proportionalitets-antagelsen (PH)
+
+```{r}
+#| echo: true
+
+library(survival)
+library(survminer)  # ggcoxzph
+
+# Simulér random data
+set.seed(123)  
+n <- 200  # Antal obs
+tid <- rexp(n, 0.1)  # Overlevelsestider
+status <- sample(0:1, n, replace = TRUE)  # Censorering
+gruppe <- rbinom(n, 1, 0.5)  # Konstruér to grupper
+
+# Skab ikke-proportionalitet ved at lade hazarden for gruppe 1 stige over tid:
+tid[gruppe == 1] <- tid[gruppe == 1] * 1.05 ^ tid[gruppe == 1]
+
+# data frame
+random_data <- data.frame(tid, status, gruppe)
+
+#---- FOKUSÉR PÅ DET FØLGENDE ----------#
+
+# Cox PH model
+cox_model_nonprop <- coxph(Surv(tid, status) ~ factor(gruppe), data = random_data)
+
+# Test PH antagelse med funktionen cox.zph()
+test_proportionality_nonprop <- cox.zph(cox_model_nonprop)
+
+print(test_proportionality_nonprop)
+
+```
+
+## Undersøgelse af proportionalitets-antagelsen (PH)
+
+```{r}
+#| echo: true
+
+p <- ggcoxzph(test_proportionality_nonprop)
+p
+```
+
+## Undersøgelse af proportionalitets-antagelsen (PH)
+
+::: {style="font-size: 75%;"}
+
+Når vi evaluerer proportionalitetsantagelsen i en Cox-model, anvender vi funktionen `cox.zph`, som beregner Schoenfeld-residualer: 
+
+    -  Den vandrette linje i plottet repræsenterer situationen, hvor proportionalitetsantagelsen holder – dvs. der er ingen systematisk ændring i residualerne over tid.
+
+    -  Hvis Schoenfeld-residualerne danner et mønster eller systematisk afvigelse over tid, tyder det på et brud med proportionalitetsantagelsen.
+
+    -  Den globale test i cox.zph vurderer, om antagelsen holder for hele modellen. En signifikant p-værdi (typisk $p<0.05$) indikerer, at proportionalitetsantagelsen sandsynligvis ikke er opfyldt. 
+
+    Eksempel på output: 
+
+```{r}
+#| echo: true
+
+print(test_proportionality_nonprop)
+
+```
+
+    - Hvis proportionalitetsantagelsen brydes, skyldes det ofte, at hazardraten ændrer sig forskelligt over tid – dvs. risikoen for hændelsen stiger eller falder på forskellige tidspunkter i perioden.
+
+:::
+
+## Hvordan håndterer vi ikke-proportionalitet i en Cox model? 
+
+::: {style="font-size: 75%;"}
+
+**1.1 Stratifisering af gruppe: tillader hazarden at varierer mellem grupper.**
+
+  - Ved at stratificere tillader vi, at baseline hazard varierer mellem grupper, hvilket fjerner antagelsen om, at effekten af den stratificerede variabel skal være konstant over tid.
+
+```{r}
+#| echo: true
+#| eval: false
+
+# Data er random og selve outputtet her er ikke det mest interessante ... 
+cox_model_strat <- coxph(Surv(tid, status) ~ strata(factor(group)), 
+                          method = "efron",  
+                          data = random_data)
+
+summary(cox_model_strat)
+```
+
+- Med stratificering estimerer vi effekten af de andre kovariater, mens vi "kontrollerer" for den variable, der bryder proportionalitetsantagelsen. Bemærk, at når man stratificerer, gives der ikke et direkte output for den stratificerede variabel – dens effekt er implicit optaget i den skiftende baseline hazard for hver stratum. 
+
+:::
+
+## Hvordan håndterer vi ikke-proportionalitet i en Cox model? 
+
+::: {style="font-size: 75%;"}
+
+**1.2 Stratifisering af tid/tidsperioder**
+
+Heavyside løsning på overskridelse af PH (grundbog s. 108-113)
+
+- Når proportionalitetsantagelsen brydes, kan en Heaviside-løsning anvendes. Ideen er at opdele den samlede observationstid i flere intervaller, hvor vi antager, at proportionalitetsantagelsen holder inden for hvert interval. Dermed kan vi modellere effekten af en covariat (fx køn) separat i hvert tidsinterval.
+
+- I praksis kan vi fx opdele tiden i to perioder og derefter konstruere nye indikatorvariable for køn, så de afspejler, om en kvinde er i den første eller den anden periode. Dette gøres med en piecewise-løsning, hvor vi bruger fx `if_else()` til at definere de nye variable.
+
+```{r}
+#| eval: false
+
+df %>% 
+  mutate(piecewise2, 
+        hv1_kvinde_t0_t10 = if_else(kvinde == 1 & tid %in% c(0:10), 1, 0),
+        hv2_kvinde_t10_t23 = if_else(kvinde == 1 & tid %in% c(11:23), 1, 0))
+
+```
+
+- På denne måde kan modellen estimere separate hazarder for kvinder i de to tidsperioder, hvilket adresserer eventuel ikke-proportionalitet, fordi vi tillader hazardfunktionen at ændre sig forskelligt i de opdelte perioder.
+
+:::
+
+## Hvordan håndterer vi ikke-proportionalitet i en Cox model? 
+
+**2. Vælg en `ATF` model der ikke er betinget af PH.**
+
+  - I en ATF-model modelleres ventetiden direkte, og effekten af covariater udtrykkes som en acceleration eller deceleration af overlevelsestiden – ikke som en konstant multiplicativ effekt på hazardraten. Dermed er ATF-modellen ikke afhængig af proportionalitetsantagelsen, og den kan give en bedre tilpasning, hvis hazardratioen varierer over tid.
+
+## Hvordan håndterer vi ikke-proportionalitet i en Cox model? 
+
+::: {style="font-size: 75%;"}
+
+:::{.incremental}
+
+**3. Time-dependent Cox model: interaktion med tiden**
+
+    - I en time-dependent Cox-model kan vi håndtere ikke-proportionalitet ved at inkludere en interaktion med tiden, så effekten af en covariat ændrer sig over tid. 
+
+    - I denne model betyder `tt(kvinde)`, at vi antager, at effekten af at være kvinde ændres log-lineært med tiden – altså udtrykkes som $\beta_{2}​ \times t$. Dette indebærer, at:
+
+      - Koefficienten for kvinde repræsenterer den basislog-hazard ratio for at være kvinde ved $t=0$.
+      
+      - Koefficienten for `tt(kvinde)` angiver, hvor meget log-hazard ratioen ændres pr. tidsenhed.
+
+      - Således kan vi se, hvordan den relative risiko for at være kvinde (i forhold til referencegruppen) varierer over tid. Det er vigtigt at bemærke, at denne løsning forudsætter en log-lineær sammenhæng mellem kvinde og tiden. Hvis denne antagelse ikke passer til dataene, kan modellen være mis-specifieret.
+
+      - Denne løsning betinger dog at der er en log-linear sammenhæng mellem `kvinde` og `tid`. $\beta_{2} \times t$. 
+
+:::
+
+```{r}
+#| echo: true
+#| eval: false
+cox_v2 <- coxph(Surv(start, slut, event) ~ kvinde + tt(kvinde) + region18, 
+                method = "efron", 
+                data = Cox_lang, 
+                tt = function(x,t,...)x*t) 
+
+```
+
+```
+ 		                  coef 		    exp(coef)  	se(coef)    z 	    Pr(>|z|)    
+kvinde               	1.261986  	3.532429  	0.089738  	14.063   < 2e-16 ***
+tt(kvinde)          	-0.075050  	0.927697  	0.007598 	 -9.878    < 2e-16 ***
+region18Midtjylland  	0.122324  	1.130121  	0.042480  	2.880    0.00398 ** 
+region18Nordjylland  	0.168815  	1.183901  	0.051684  	3.266    0.00109 ** 
+region18Sjælland     	0.117701  	1.124908  	0.047194  	2.494    0.01263 *  
+region18Syddanmark 	  0.167959  	1.182888  	0.042587  	3.944    8.02e-05 ***
+---
+Signif. codes:  0 ‘***’ 0.001 ‘**’ 0.01 ‘*’ 0.05 ‘.’ 0.1 ‘ ’ 1
+```
+:::
+
+
+## Hvilke metode skal anvendes?
+
+::: {style="font-size: 75%;"}
+
+:::{.incremental}
+
+- Stratifikations-metoden er at foretrække, hvis interaktionen er ikke-linear.
+  - Stratifikations-metoden bruger kortere computertid.
+  - Variablen, der stratificeres for må ikke være interessant i analysesammenhænge!!
+    - Ulempen er, at den stratificerede variabel ikke vises i outputtet – dens effekt “absorberes” i baseline hazard, så hvis den variable også er af analytisk interesse, kan det være en ulempe.
+
+- Hvis interaktionen er korrekt specificeret, er interaktions-metoden at foretrække.
+  - Hvis du kan specificere interaktionen med tiden korrekt (f.eks. log-lineært, som $\beta_{2}​ \times t$), er denne metode at foretrække, da den giver et direkte output på, hvordan effekten ændres over tid.
+  - Denne metode kan være mere effektiv, hvis den antagne tidsafhængighed er korrekt specificeret, men den kræver, at du har en god teoretisk eller empirisk begrundelse for den valgte model.
+
+- I det store billede er der et trade-off mellem robusthed og effektivitet. Stratifikation er robust og hurtig, men giver ikke mulighed for at tolke effekten af den stratificerede variabel, mens den tidsafhængige interaktion giver mere detaljeret information, men kræver en korrekt specificeret model for interaktionen.
+
+:::
+
+:::
+
+## Variabel selektion. 
+
+Hvordan har i gået til det når i har skrevet projekter?
+
+## Øvelser: 
+
+- Fortsæt med data fra forrige lektion: `Cox_kort.rda`
+
+1.1 Udvælg uafhængige variable. Argumentér og reflekter over denne udvælgelsesprocess. Fordele, ulemper?
+
+1.2 Lav de fire ATF modeller fra sidste øvelse samt (mindst) en Cox PH model.
+
+2.1 Undersøg statistisk, hvilken model, der giver mest mening. Argumentér for valg af modellen. 
+
+2.2 For Cox-regressionen(erne):
+
+  - Undersøg om antagelsen om proportionalitet er opfyldt (Schoenfeld-residualer)
+    
+  - Hvis ikke, overvej hvilken løsning, der vil være bedst.
+    
+  - Kod denne løsning i R.
+
+
+3.1 Udvælg og fortolk den endelig model. Herunder også en diskussion af hvor denne model er valgt som den endelige model. 
+
+3.2 Lav relevante visualiseringer af resultater fra den endelige model.
+
+
+
+
+
+
+
+
+
+
+
+
+
