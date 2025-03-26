@@ -129,9 +129,9 @@ hvor
 
 - $t$ er tiden. 
 
-Gør det muligt at beskrive forskellige typer risikoforløb ved at justere værdierne af $p$ og $\sigma$.
+- Gør det muligt at beskrive forskellige typer risikoforløb ved at justere værdierne af $p$ og $\sigma$.
 
-*(Man finder skala- og shape-parametrene ved at fitte modellen til data ved hjælp af maksimum likelihood-estimering (MLE). Surv-funktionerne estimerer automatisk både skala-parameteren ($\sigma$) og shape-parameteren ($p$))*
+- *(Man finder skala- og shape-parametrene ved at fitte modellen til data ved hjælp af maksimum likelihood-estimering (MLE). Surv-funktionerne estimerer automatisk både skala-parameteren ($\sigma$) og shape-parameteren ($p$))*
 
 :::
 
@@ -206,7 +206,7 @@ Skalaværdien ($\sigma$) er $1/\sigma = p$,
 
 - Når $0 < \sigma < 0.5$ stiger hazardfunktionen med en accelererende hældning, dvs. risikoen stiger hurtigere med tiden.
 
-Denne parameterisering gør det muligt at beskrive forskellige risikoprofiler over tid ved at ændre værdien af $\sigma$.
+- Denne parameterisering gør det muligt at beskrive forskellige risikoprofiler over tid ved at ændre værdien af $\sigma$.
 
 :::
 
@@ -286,7 +286,7 @@ $$
 - Når $\sigma > 1$: Hazardfunktionen starter ved et uendeligt stort niveau og falder herefter mod 0.
 - Når $\sigma = 1$: Hazardfunktionen har ved $t=0$ en værdi på $1$ og falder mod $0$, når $t$ går mod uendelig.
 
-*(Man finder skala- og shape-parametrene ved at fitte modellen til data ved hjælp af maksimum likelihood-estimering (MLE). Surv-funktionerne estimerer automatisk både skala-parameteren ($\sigma$) og shape-parameteren ($p$))*
+- *(Man finder skala- og shape-parametrene ved at fitte modellen til data ved hjælp af maksimum likelihood-estimering (MLE). Surv-funktionerne estimerer automatisk både skala-parameteren ($\sigma$) og shape-parameteren ($p$))*
 
 :::
 
@@ -408,7 +408,7 @@ $\gamma$ er den faktor, der forkorter eller forlænger overlevelsestiden.
 
 - Hvis $\gamma = 1$: er der ingen forskel i overlevelsestid mellem grupperne.
 
-$\gamma$ estimeres i en regressions model: $\gamma = \exp({\beta})$, hvor $\beta$ er den estimerede koefficient. Derfor betyder $\exp({\beta})$ hvor meget overlevelsestiden i én gruppe skal multipliceres med for at matche overlevelsestiden i referencegruppen.
+- $\gamma$ estimeres i en regressions model: $\gamma = \exp({\beta})$, hvor $\beta$ er den estimerede koefficient. Derfor betyder $\exp({\beta})$ hvor meget overlevelsestiden i én gruppe skal multipliceres med for at matche overlevelsestiden i referencegruppen.
 
 :::
 
